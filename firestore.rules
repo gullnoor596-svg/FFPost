@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    // IMPORTANT: replace this UID with your real Firebase Auth UID.
+    function isAdmin() { return signedIn() && request.auth.uid == "REPLACE_WITH_YOUR_ADMIN_UID"; }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if signedIn() && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['displayName','bio','avatarUrl','email','createdAt','updatedAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 40
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 240;
+      allow update: if signedIn() && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName','bio','avatarUrl','email','updatedAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 40
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 240;
+      allow delete: if isAdmin();
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid','authorName','authorAvatar','caption','imageUrl','storagePath','likeCount','createdAt','updatedAt'])
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 500
+        && request.resource.data.imageUrl is string
+        && request.resource.data.likeCount == 0;
+      allow update: if signedIn() && (
+        (resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['caption','updatedAt'])
+          && request.resource.data.caption is string
+          && request.resource.data.caption.size() <= 500)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+          && request.resource.data.likeCount is int
+          && request.resource.data.likeCount >= 0)
+      );
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+
+      match /likes/{userId} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == userId
+          && request.resource.data.uid == request.auth.uid;
+        allow delete: if signedIn() && request.auth.uid == userId;
+        allow update: if false;
+      }
+    }
+  }
+}
